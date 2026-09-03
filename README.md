@@ -1,12 +1,11 @@
-# DNL Admin — Setup & Deployment
+# DNL Public Platform — Setup & Deployment
 
-## 1. Create your admin login
+## 1. Run the database migration first
 
-This app uses real Supabase Auth (email + password) — there's no public sign-up,
-by design. Create your own account once:
-
-Supabase Dashboard → Authentication → Users → Add User → enter your email and
-a password. That's the login you'll use going forward.
+`dnl_public_platform_functions.sql` (delivered alongside this app) must
+run before anything here works — it adds the settings table, the four
+public-safe read functions, and enables Realtime on the tables this app
+needs to watch. Run it in Supabase's SQL Editor.
 
 ## 2. Configure environment variables
 
@@ -14,9 +13,7 @@ a password. That's the login you'll use going forward.
 cp .env.example .env
 ```
 
-Fill in the two values from Supabase Dashboard → Project Settings → API:
-- `VITE_SUPABASE_URL` — your Project URL
-- `VITE_SUPABASE_ANON_KEY` — the "anon" / "publishable" key (NOT the service_role key)
+Same Supabase project, same two values, as both other DNL apps.
 
 ## 3. Run locally
 
@@ -25,55 +22,55 @@ npm install
 npm run dev
 ```
 
-Opens at http://localhost:5173 — sign in with the account you created in step 1.
+Resize your browser window to test both layouts — 900px wide and up shows
+the TV layout, narrower shows the phone layout.
 
 ## 4. Deploy to Vercel
 
-Push this folder to its own GitHub repo, then in Vercel:
-- New Project → import that repo
-- Framework Preset: Vite (should auto-detect)
-- Add the same two environment variables from step 2 under
-  Project Settings → Environment Variables
-- Deploy
+Push to its own new GitHub repo (fully separate from the other two apps,
+per your call), then Vercel: New Project -> import -> Framework Preset:
+Vite -> add the same two environment variables -> Deploy.
 
-## What's built
+## How this actually works
 
-- **Dashboard** — quick overview stats
-- **Teams & Players** — add teams, manage 12-player rosters, capture DUPR ID
-  (or email as a fallback, if a player doesn't have a DUPR ID yet)
-- **Schedule** — one-click round-robin generator (15 group-stage face-offs
-  for 6 teams), editable date/time/court per face-off
-- **Lineups** — enter both teams' lineups (all 9 roles) before a face-off;
-  automatically creates the underlying sub-matches the Referee Scoring App
-  will score against
-- **Standings & Scores** — live cumulative league table, plus two correction
-  tools: editing an individual sub-match's score directly (for genuine
-  mistakes — the total recalculates automatically), or an optional
-  points-override per face-off for anything that isn't a scoring correction
-  (forfeits, disciplinary decisions) — the override never erases the
-  underlying match data, it just takes precedence when present
-- **Knockout Stage** — staged IPL-style generation: Qualifier 1 and
-  Eliminator get created together once the group stage is fully complete;
-  Qualifier 2 only becomes available once both of those are actually
-  finished (since it needs their real results); the Final becomes available
-  once Qualifier 2 is done. Includes a manual winner override for the rare
-  case of a genuine points tie.
-- **Export to DUPR** — generates a CSV in DUPR's exact bulk-import format,
-  per face-off, only including sub-matches that have actually been played.
-  The upload step itself needs a browser (DUPR's mobile app doesn't support
-  CSV import) — dashboard.dupr.com → your Club → Matches → Import Matches
-  via CSV.
+**No login, fully public** — same security pattern as the Referee App:
+zero direct table access. Every read goes through a function that
+explicitly builds a safe response and simply never includes the referee
+OTP anywhere in its output.
 
-## Not built yet — the Referee Scoring App
+**Live updates via Supabase Realtime**, not polling — the instant a
+referee saves a score anywhere, every connected screen (TV or phone,
+anywhere in the world) refetches within a fraction of a second.
 
-This admin backend creates the schedule, lineups, and sub-match records —
-but there's no way yet for a referee to actually enter a score during a
-match. That's the next piece to build, as a genuinely separate app (same
-reasoning as the rest of this system: a referee scoring a match shouldn't
-also have the power to edit the schedule or override points).
+**Responsive by screen width**, not by device type — the same URL and the
+same deployment serves both. 900px is the cutoff; a tablet in landscape
+gets the TV layout, one in portrait gets the phone layout.
 
-## Not built yet — the Public Standings Platform
+**TV layout**: three columns. Court N (left) and Court B (right) each show
+the most recently completed sub-match on that court, with player names,
+scores, and a winner highlight. The middle column shows either the live
+standings table or the knockout bracket, controlled by a toggle in the
+Admin Backend's Knockout page — never automatic, the admin decides when to
+switch.
 
-The suspense-building, no-login public page teams and players actually
-watch. Comes after the Referee Scoring App, once there's real data flowing
-through both to display.
+**Phone layout**: same three sections, stacked instead of side-by-side.
+Tapping a court's card opens a full breakdown of that face-off's all 9
+sub-matches with player names — the same underlying data as the TV, just
+reached through a tap instead of shown inline, since a phone screen can't
+show as much at once.
+
+**The bracket** is custom-built (SVG connector lines + Framer Motion),
+matching the IPL-style qualifier/eliminator/qualifier-2/final shape:
+Qualifier 1's winner has a direct line straight to the Final, while
+everyone else's path runs through Eliminator and Qualifier 2. Team names
+turn green once a winner is decided — either because the points make it
+obvious, or because the admin resolved a genuine tie manually.
+
+## What to double check once this is actually live
+
+I built and verified this against the real schema and confirmed the logic
+carefully, but never against your live Supabase data with real matches
+being scored — please do a real end-to-end test (score a sub-match from
+the Referee App, confirm it appears within a second or two on both a TV-
+width browser window and a phone) before trusting this for the actual
+event.
